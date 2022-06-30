@@ -1,9 +1,4 @@
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
-};
+use axum::{http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use base64::encode;
 use opencv::{imgcodecs, prelude::*, videoio};
 use serde::{Deserialize, Serialize};
@@ -40,24 +35,19 @@ async fn capture(
     tracing::debug!("Opening {}", payload.rtsp);
     let mut err_msg: String = "".to_string();
     let mut img_b64: String = "".to_string();
+    let status_code: StatusCode;
 
     if let Ok(mut cam) = videoio::VideoCapture::from_file(&payload.rtsp, videoio::CAP_ANY) {
         let mut frame = Mat::default();
         let mut retry_count = 0;
         loop {
-            if let Ok(result) = cam.read(&mut frame) {
-                if result == true {
-                    let params: opencv::core::Vector<i32> = opencv::core::Vector::new();
-                    let mut buf: opencv::core::Vector<u8> = opencv::core::Vector::new();
-                    let r = imgcodecs::imencode(".jpg", &frame, &mut buf, &params);
-                    match r {
-                        Ok(true) => {
-                            img_b64 = encode(buf);
-                            break;
-                        }
-                        Ok(false) => println!("Failed to encode image."),
-                        Err(e) => println!("{}", e),
-                    };
+            if let Ok(true) = cam.read(&mut frame) {
+                let params: opencv::core::Vector<i32> = opencv::core::Vector::new();
+                let mut buf: opencv::core::Vector<u8> = opencv::core::Vector::new();
+                if let Ok(true) = imgcodecs::imencode(".jpg", &frame, &mut buf, &params) {
+                    img_b64 = encode(buf);
+                    status_code = StatusCode::OK;
+                    break;
                 } else {
                     retry_count += 1;
                 }
@@ -65,30 +55,30 @@ async fn capture(
                 retry_count += 1;
             }
             if retry_count > 25 * 5 {
-                err_msg = "Time out reading video stream.".to_string();
+                err_msg = "Failed to open video stream.".to_string();
+                status_code = StatusCode::REQUEST_TIMEOUT;
                 break;
             }
         }
     } else {
         err_msg = "Failed to open video stream.".to_string();
+        status_code = StatusCode::BAD_GATEWAY;
     }
 
     // this will be converted into a JSON response with a status code of `201 Created`
     let cap_result = CaptureResult { img_b64, err_msg };
-    (StatusCode::CREATED, Json(cap_result))
+    (status_code, Json(cap_result))
 }
 
 // the input to our `capture` handler
 #[derive(Deserialize)]
 struct CaptureRequest {
     rtsp: String,
-    max_width: u32,
-    max_height: u32,
 }
 
 // the output to our `capture` handler
 #[derive(Serialize)]
 struct CaptureResult {
-    img_b64: String,
     err_msg: String,
+    img_b64: String,
 }
