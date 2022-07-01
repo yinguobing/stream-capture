@@ -1,4 +1,4 @@
-FROM opencv-rust as build
+FROM yinguobing/opencv:4.5.4-devel-rust1.62-ubuntu20.04 as build
 
 WORKDIR /build/stream-capture
 ADD . /build/stream-capture/
